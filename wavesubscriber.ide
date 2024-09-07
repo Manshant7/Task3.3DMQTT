@@ -1,0 +1,90 @@
+#include <WiFiNINA.h>     // This library helps the Arduino connect to WiFi
+#include <PubSubClient.h> // This library is for sending and receiving messages using MQTT
+
+// WiFi and MQTT settings
+const char* ssid = "Manshant";           //WiFi network name (SSID)
+const char* password = "12345678";     //  WiFi password
+const char* mqtt_server = "broker.emqx.io";  // The server we're using to send messages (MQTT broker)
+const int mqtt_port = 1883;            // The port number for the MQTT server (1883 is the default for non-secure)
+const char* mqtt_topic_wave = "SIT210/wave";  // The topic we will publish messages to (this is like a chatroom name for MQTT)
+
+// Ultrasonic sensor pins
+const int trigPin = 9;  // Pin on the Arduino that sends the signal (trigger pin)
+const int echoPin = 10; // Pin that listens for the echo (echo pin)
+long duration;          // Variable to store the time it takes for the signal to return
+int distance;           // Variable to store the calculated distance
+
+WiFiClient espClient;       // Create a WiFi client
+PubSubClient client(espClient);  // Create an MQTT client
+
+// Function to connect to WiFi
+void setup_wifi() {
+  delay(10);                     // A short pause before starting
+  Serial.println("Connecting to WiFi...");  // Let us know we're trying to connect
+  WiFi.begin(ssid, password);    // Try to connect to the WiFi network
+  while (WiFi.status() != WL_CONNECTED) {  // Keep trying until we're connected
+    delay(500);                  // Wait half a second between attempts
+    Serial.print(".");            // Print a dot to show it's still trying
+  }
+  Serial.println("\nWiFi connected!"); // Once we're connected, let us know
+}
+
+// Function to connect to the MQTT broker
+void reconnect() {
+  while (!client.connected()) {   // Keep trying until the connection is made
+    Serial.print("Attempting MQTT connection...");  // Let us know it's trying
+    if (client.connect("ArduinoPublisher")) {  // Try connecting as "ArduinoPublisher"
+      Serial.println("connected");  // If successful, print that we're connected
+    } else {  // If it fails, print the error code and wait 5 seconds before trying again
+      Serial.print("failed, rc=");
+      Serial.print(client.state());  // Print the connection error
+      delay(5000);  // Wait 5 seconds before retrying
+    }
+  }
+}
+
+// Function to detect distance using the ultrasonic sensor
+void detect_wave() {
+  // Send a pulse from the trigger pin to start the ultrasonic measurement
+  digitalWrite(trigPin, LOW);          // Ensure the trigger pin is low
+  delayMicroseconds(2);                // Wait for 2 microseconds
+  digitalWrite(trigPin, HIGH);         // Send a high signal for 10 microseconds to trigger the pulse
+  delayMicroseconds(10);               // Wait for 10 microseconds
+  digitalWrite(trigPin, LOW);          // Set the trigger pin low again
+  
+  // Read the echo pin to measure the time it takes for the pulse to return
+  duration = pulseIn(echoPin, HIGH);   // Measure the time the echo pin stays high (time for the pulse to return)
+
+  // Convert the time to distance (in cm)
+  distance = duration * 0.034 / 2;     // Formula to calculate distance: time * speed of sound / 2
+
+  // Print the distance for debugging purposes
+  Serial.print("Distance: ");          
+  Serial.print(distance);              // Print the measured distance
+  Serial.println(" cm");
+
+  // If something is detected within 20 cm, send a message via MQTT
+  if (distance > 0 && distance < 20) {  // If the distance is greater than 0 and less than 20 cm
+    client.publish(mqtt_topic_wave, "Wave detected by Publisher");  // Send the message to the MQTT broker
+    Serial.println("Wave detected, message published!");  // Let us know the message was sent
+    delay(3000);  // Wait 3 seconds before taking another measurement to avoid spamming messages
+  } else {
+    Serial.println("No wave detected.");  // If nothing is detected, let us know
+  }
+}
+
+void setup() {
+  Serial.begin(9600);   // Start the serial connection at 9600 baud (for debugging)
+  pinMode(trigPin, OUTPUT);  // Set the trigger pin as an output
+  pinMode(echoPin, INPUT);   // Set the echo pin as an input
+  setup_wifi();  // Connect to the WiFi network
+  client.setServer(mqtt_server, mqtt_port);  // Set up the MQTT server details
+}
+
+void loop() {
+  if (!client.connected()) {  // If the MQTT client isn't connected
+    reconnect();              // Try to reconnect
+  }
+  client.loop();  // Keep the connection alive and handle incoming/outgoing messages
+  detect_wave();  // Call the function to detect waves and send messages
+}

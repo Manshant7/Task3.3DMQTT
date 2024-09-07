@@ -1,0 +1,74 @@
+#include <WiFiNINA.h>     // Library to handle WiFi connections for Arduino
+#include <PubSubClient.h> // Library to handle MQTT (message queuing and telemetry transport)
+
+// WiFi credentials and MQTT server settings
+const char* ssid = "Manshant";           // WiFi network's SSID (WiFi name)
+const char* password = "12345678";       // WiFi password
+const char* mqtt_server = "broker.emqx.io";  // MQTT broker's address (this is a free public broker)
+const int mqtt_port = 1883;              // MQTT port (1883 is the default for non-secure MQTT)
+const char* mqtt_topic_wave = "SIT210/wave";  // MQTT topic that this program will subscribe to
+
+// LED pin
+const int ledPin = 8;   // This is the pin number where the LED is connected
+
+WiFiClient espClient;       // Creates a WiFi client object to manage the WiFi connection
+PubSubClient client(espClient);  // Creates a PubSub client object to handle MQTT communication
+
+// Function to connect to WiFi
+void setup_wifi() {
+  delay(10);                             // A brief delay before attempting connection
+  Serial.println("Connecting to WiFi...");  // Display a message on the Serial Monitor
+  WiFi.begin(ssid, password);            // Start connecting to WiFi using SSID and password
+  while (WiFi.status() != WL_CONNECTED) { // Wait until the connection is successful
+    delay(500);                           // Pause for 500ms between each retry
+    Serial.print(".");                    // Print dots to indicate it's still trying to connect
+  }
+  Serial.println("\nWiFi connected!");    // Once connected, display a success message
+}
+
+// Function to handle incoming MQTT messages
+void callback(char* topic, byte* message, unsigned int length) {
+  Serial.print("Message arrived: ");     // Print a message when a new MQTT message is received
+  for (int i = 0; i < length; i++) {     // Loop through the message and print it character by character
+    Serial.print((char)message[i]);      // Convert the message from byte format to char and print it
+  }
+  Serial.println();                      // Move to a new line after printing the entire message
+
+  // Flash LED 3 times when a message is received
+  for (int i = 0; i < 3; i++) {          // Loop 3 times to blink the LED
+    digitalWrite(ledPin, HIGH);          // Turn the LED on
+    delay(500);                          // Wait for 500ms (0.5 seconds)
+    digitalWrite(ledPin, LOW);           // Turn the LED off
+    delay(500);                          // Wait for another 500ms before the next blink
+  }
+}
+
+// Function to connect to MQTT broker
+void reconnect() {
+  while (!client.connected()) {          // Keep trying to connect if the client is not connected
+    Serial.print("Attempting MQTT connection...");  // Display a message that connection is being attempted
+    if (client.connect("ArduinoSubscriber")) {      // Try connecting to the MQTT broker as "ArduinoSubscriber"
+      Serial.println("connected");                  // If connected, display a success message
+      client.subscribe(mqtt_topic_wave);            // Subscribe to the MQTT topic "SIT210/wave"
+    } else {
+      Serial.print("failed, rc=");                  // If connection fails, print the reason (error code)
+      Serial.print(client.state());                 // Print the error code for debugging
+      delay(5000);                                  // Wait 5 seconds before trying to reconnect
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(9600);              // Start the serial communication at 9600 baud rate
+  pinMode(ledPin, OUTPUT);         // Set the LED pin as an output so it can be controlled
+  setup_wifi();                    // Call the function to connect to WiFi
+  client.setServer(mqtt_server, mqtt_port);  // Set the MQTT server (broker) details
+  client.setCallback(callback);    // Set the callback function to handle incoming MQTT messages
+}
+
+void loop() {
+  if (!client.connected()) {       // Check if the MQTT client is disconnected
+    reconnect();                   // If disconnected, call the reconnect function to connect again
+  }
+  client.loop();                   // Keep the connection alive and check for incoming messages
+}
